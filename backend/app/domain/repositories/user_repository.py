@@ -1,4 +1,5 @@
 from typing import List, Optional
+from abc import abstractmethod
 from .base import Repository
 from ..entities.user import User
 from ..enums.common import UserRole

@@ -2,8 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from ...core.database import get_db
-from ...api.v1.endpoints.auth import get_current_user
-from ...models.user import User as UserModel
+from ...application.use_cases.auth_use_cases import GetCurrentUserUseCase
 from ...application.use_cases.supply_use_cases import (
     CreateSupplyUseCase, GetSuppliesUseCase, UpdateSupplyUseCase, 
     DeleteSupplyUseCase, GetLowStockAlertsUseCase,
@@ -12,7 +11,9 @@ from ...application.use_cases.supply_use_cases import (
 from ...infrastructure.repositories.sqlalchemy_supply_repository import (
     SQLAlchemySupplyRepository, SQLAlchemySupplyCategoryRepository
 )
+from ...infrastructure.repositories.sqlalchemy_user_repository import SQLAlchemyUserRepository
 from ...infrastructure.services.sqlalchemy_inventory_service import SQLAlchemyInventoryService
+from ...infrastructure.services.sqlalchemy_auth_service import SQLAlchemyAuthService
 from ...domain.enums.common import TransactionType
 
 router = APIRouter()
@@ -24,31 +25,36 @@ def get_supply_repository(db: Session = Depends(get_db)) -> SQLAlchemySupplyRepo
 def get_category_repository(db: Session = Depends(get_db)) -> SQLAlchemySupplyCategoryRepository:
     return SQLAlchemySupplyCategoryRepository(db)
 
+def get_user_repository(db: Session = Depends(get_db)) -> SQLAlchemyUserRepository:
+    return SQLAlchemyUserRepository(db)
+
 def get_inventory_service(db: Session = Depends(get_db), supply_repo = Depends(get_supply_repository)) -> SQLAlchemyInventoryService:
     return SQLAlchemyInventoryService(db, supply_repo)
 
-# 유스케이스 의존성 주입
-def get_create_supply_use_case(
-    supply_repo = Depends(get_supply_repository),
-    category_repo = Depends(get_category_repository),
-    inventory_service = Depends(get_inventory_service)
-) -> CreateSupplyUseCase:
-    return CreateSupplyUseCase(supply_repo, category_repo, inventory_service)
+def get_auth_service(db: Session = Depends(get_db)) -> SQLAlchemyAuthService:
+    return SQLAlchemyAuthService(db)
 
-def get_get_supplies_use_case(supply_repo = Depends(get_supply_repository)) -> GetSuppliesUseCase:
-    return GetSuppliesUseCase(supply_repo)
+def get_current_user_use_case(
+    user_repo = Depends(get_user_repository),
+    auth_service = Depends(get_auth_service)
+) -> GetCurrentUserUseCase:
+    return GetCurrentUserUseCase(user_repo, auth_service)
 
-def get_update_supply_use_case(
-    supply_repo = Depends(get_supply_repository),
-    inventory_service = Depends(get_inventory_service)
-) -> UpdateSupplyUseCase:
-    return UpdateSupplyUseCase(supply_repo, inventory_service)
-
-def get_delete_supply_use_case(supply_repo = Depends(get_supply_repository)) -> DeleteSupplyUseCase:
-    return DeleteSupplyUseCase(supply_repo)
-
-def get_low_stock_alerts_use_case(supply_repo = Depends(get_supply_repository)) -> GetLowStockAlertsUseCase:
-    return GetLowStockAlertsUseCase(supply_repo)
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    use_case: GetCurrentUserUseCase = Depends(get_current_user_use_case)
+):
+    """현재 사용자 가져오기 의존성"""
+    response = use_case.execute(token)
+    
+    if not response.success:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=response.error,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return response.data.user
 
 @router.get("/", response_model=List[dict])
 async def get_supplies(

@@ -1,4 +1,5 @@
 from typing import List, Optional
+from abc import ABC, abstractmethod
 from sqlalchemy.orm import Session
 from ...domain.repositories.supply_repository import SupplyRepository, SupplyCategoryRepository
 from ...domain.entities.supply import Supply, SupplyCategory
