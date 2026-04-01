@@ -30,6 +30,6 @@
     "useDefineForClassFields": true
   },
   "include": [
-    "src"
+    "."
   ]
 }
