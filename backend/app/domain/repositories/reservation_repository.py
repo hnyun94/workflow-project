@@ -1,4 +1,5 @@
 from typing import List, Optional
+from abc import abstractmethod
 from datetime import datetime
 from .base import Repository
 from ..entities.reservation import Reservation

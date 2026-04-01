@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from ...core.database import get_db
@@ -15,8 +16,10 @@ from ...infrastructure.repositories.sqlalchemy_user_repository import SQLAlchemy
 from ...infrastructure.services.sqlalchemy_inventory_service import SQLAlchemyInventoryService
 from ...infrastructure.services.sqlalchemy_auth_service import SQLAlchemyAuthService
 from ...domain.enums.common import TransactionType
+from ...core.config_sqlite import settings
 
 router = APIRouter()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 
 # 의존성 주입 설정
 def get_supply_repository(db: Session = Depends(get_db)) -> SQLAlchemySupplyRepository:
@@ -56,6 +59,29 @@ def get_current_user(
     
     return response.data.user
 
+# 유스케이스 의존성 주입
+def get_create_supply_use_case(
+    supply_repo = Depends(get_supply_repository),
+    category_repo = Depends(get_category_repository),
+    inventory_service = Depends(get_inventory_service)
+) -> CreateSupplyUseCase:
+    return CreateSupplyUseCase(supply_repo, category_repo, inventory_service)
+
+def get_get_supplies_use_case(supply_repo = Depends(get_supply_repository)) -> GetSuppliesUseCase:
+    return GetSuppliesUseCase(supply_repo)
+
+def get_update_supply_use_case(
+    supply_repo = Depends(get_supply_repository),
+    inventory_service = Depends(get_inventory_service)
+) -> UpdateSupplyUseCase:
+    return UpdateSupplyUseCase(supply_repo, inventory_service)
+
+def get_delete_supply_use_case(supply_repo = Depends(get_supply_repository)) -> DeleteSupplyUseCase:
+    return DeleteSupplyUseCase(supply_repo)
+
+def get_low_stock_alerts_use_case(supply_repo = Depends(get_supply_repository)) -> GetLowStockAlertsUseCase:
+    return GetLowStockAlertsUseCase(supply_repo)
+
 @router.get("/", response_model=List[dict])
 async def get_supplies(
     skip: int = 0,
@@ -63,7 +89,7 @@ async def get_supplies(
     category_id: Optional[int] = None,
     status: Optional[str] = None,
     use_case: GetSuppliesUseCase = Depends(get_get_supplies_use_case),
-    current_user: UserModel = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """비품 목록 조회"""
     request = GetSuppliesRequest(skip=skip, limit=limit, category_id=category_id, status=status)
@@ -78,7 +104,7 @@ async def get_supplies(
 async def get_supply(
     supply_id: int,
     use_case: GetSuppliesUseCase = Depends(get_get_supplies_use_case),
-    current_user: UserModel = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """비품 상세 조회"""
     # 단일 조회를 위한 임시 구현
@@ -99,11 +125,11 @@ async def get_supply(
 async def create_supply(
     supply_data: dict,
     use_case: CreateSupplyUseCase = Depends(get_create_supply_use_case),
-    current_user: UserModel = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """비품 생성"""
     # 관리자 및 매니저만 생성 가능
-    if current_user.role.value not in ["admin", "manager"]:
+    if current_user.role not in ["admin", "manager"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     request = CreateSupplyRequest(**supply_data)
@@ -119,11 +145,11 @@ async def update_supply(
     supply_id: int,
     supply_data: dict,
     use_case: UpdateSupplyUseCase = Depends(get_update_supply_use_case),
-    current_user: UserModel = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """비품 수정"""
     # 관리자 및 매니저만 수정 가능
-    if current_user.role.value not in ["admin", "manager"]:
+    if current_user.role not in ["admin", "manager"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     request = UpdateSupplyRequest(supply_id=supply_id, **supply_data)
@@ -138,11 +164,11 @@ async def update_supply(
 async def delete_supply(
     supply_id: int,
     use_case: DeleteSupplyUseCase = Depends(get_delete_supply_use_case),
-    current_user: UserModel = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """비품 삭제"""
     # 관리자만 삭제 가능
-    if current_user.role.value != "admin":
+    if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     response = use_case.execute(supply_id)
@@ -155,7 +181,7 @@ async def delete_supply(
 @router.get("/low-stock/alerts", response_model=List[dict])
 async def get_low_stock_alerts(
     use_case: GetLowStockAlertsUseCase = Depends(get_low_stock_alerts_use_case),
-    current_user: UserModel = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
     """재고 부족 알림"""
     response = use_case.execute()

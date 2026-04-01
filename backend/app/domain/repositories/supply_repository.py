@@ -1,4 +1,5 @@
 from typing import List, Optional
+from abc import abstractmethod
 from .base import Repository
 from ..entities.supply import Supply, SupplyCategory
 from ..enums.common import SupplyStatus
